@@ -1,0 +1,224 @@
+C51 COMPILER V8.05a   7135                                                                 11/12/2012 15:20:50 PAGE 1   
+
+
+C51 COMPILER V8.05a, COMPILATION OF MODULE 7135
+OBJECT MODULE PLACED IN 7135.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE 7135.c BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          /*analog to digital conversion */
+   2          
+   3          #include<stdio.h> 
+   4          #include<AT89x051.h>
+   5          #include<intrins.h>
+   6          #include<string.h>
+   7          
+   8          //#define SERIAL_MODE
+   9          
+  10          static void wait (unsigned int time);
+  11          static unsigned char ReadInstrReg (void);
+  12          static void WriteInstrReg (unsigned char Instr);
+  13          static unsigned char ReadDataReg (void);
+  14          static void WriteDataReg (unsigned char val);
+  15          static void serial_init(void);
+  16          
+  17          sbit P20_PIN = P3^0;                            // I/O Pin for P2.0 for 89c51
+  18          sbit P21_PIN = P3^1;                            // I/O Pin for P2.1     for 89c51
+  19          sbit P22_PIN = P3^7;                            // I/O Pin for P2.2 for 89c51
+  20          
+  21          #define LCD_DATA        P1                              //P0 for 89c51
+  22          
+  23          #define LINE1_ADDR 0x00                         // Start of line 1 in the DD-Ram
+  24          #define LINE2_ADDR 0x40                         // Start of line 2 in the DD-Ram
+  25          
+  26          /* Display-Commands */
+  27          #define CLEAR_DISPLAY           0x01    // Clear entire display and set Display Data Address to 0
+  28          #define DD_RAM_PTR                      0x80    // Address Display Data RAM pointer
+  29          #define DISP_INIT                       0x38    // 8 bit 2 lines
+  30          #define INC_MODE                        0x06    // Display Data RAM pointer incremented after write
+  31          #define DISP_ON                         0x0C    // Display On, Blink Off
+  32          
+  33          sbit BUSY = P3^2;                                       /* Busy flag of 7135 */
+  34          sbit CLK  = P3^4;
+  35          unsigned int count;
+  36          
+  37          void main(void)
+  38          {
+  39   1              #ifdef SERIAL_MODE
+                      serial_init();
+                      printf("TEMP. MESUREMENT\r\n");
+                      #else
+  43   1              WriteInstrReg(0x30);
+  44   1              wait(4000);
+  45   1      
+  46   1              WriteInstrReg(0x30);
+  47   1              wait(100);
+  48   1              
+  49   1              WriteInstrReg(0x30);
+  50   1      //      wait(100);
+  51   1      
+  52   1              WriteInstrReg(DISP_INIT);                        //0x38
+  53   1              WriteInstrReg(INC_MODE);                         //0x06
+  54   1              WriteInstrReg(DISP_ON);                          //0x0C
+  55   1              WriteInstrReg(CLEAR_DISPLAY);            //0x01
+C51 COMPILER V8.05a   7135                                                                 11/12/2012 15:20:50 PAGE 2   
+
+  56   1              WriteInstrReg(DD_RAM_PTR);                       //0x80
+  57   1              printf("TEMP. MESUREMENT"); 
+  58   1              #endif
+  59   1      
+  60   1              TMOD |= 0x0D;
+  61   1              TR0 = 1;
+  62   1              while(1)
+  63   1              {
+  64   2                      TH0 = 0;
+  65   2                      TL0 = 0;
+  66   2                      while(!BUSY);
+  67   2                      while(BUSY);
+  68   2                      count = TH0;
+  69   2                      count <<= 8;
+  70   2                      count |= TL0;
+  71   2      
+  72   2                      #ifndef SERIAL_MODE
+  73   2                      /* Single Line 16x1 LCD  */
+  74   2      //              WriteInstrReg(DD_RAM_PTR);
+  75   2      //              printf("VALUE : \n%-8.0u", count-10001);
+  76   2      
+  77   2                      /* Double Line 16x2 LCD  */
+  78   2                      WriteInstrReg(DD_RAM_PTR | LINE2_ADDR);
+  79   2                      printf("VALUE : %-8.0u", count-10001);
+  80   2                      #else
+                              printf("VALUE : %-5.0u\r", count-10001);
+                              #endif
+  83   2              }
+  84   1      }
+  85          #ifdef SERIAL_MODE
+              void serial_init(void)
+              {
+                      SCON = 0x50;
+                      TMOD = 0x20;
+                      TH1  = 0xFD;
+                      TL1  = 0xFD;
+                      TR1  = 1;
+                      TI   = 1;
+              }
+              
+              #else
+  97          
+  98          /*
+  99          * ReadInstrReg: Read from Instruction Register of LCD Display Device
+ 100          */
+ 101          
+ 102          static unsigned char ReadInstrReg (void) {
+ 103   1              unsigned char Instr;
+ 104   1              LCD_DATA = 0xff;                                // DATA PORT is input
+ 105   1              P20_PIN = 0;                                    // select instruction register
+ 106   1              P21_PIN = 1;                                    // read operation
+ 107   1              P22_PIN = 1;                                    // give operation start signal
+ 108   1              _nop_ (); _nop_ ();                     // wait
+ 109   1              Instr = LCD_DATA;                               // read Instruction
+ 110   1              P22_PIN = 0;
+ 111   1              return(Instr);
+ 112   1      }
+ 113          
+ 114          /*
+ 115          * WriteInstrReg: Write to Instruction Register of LCD Display Device
+ 116          */
+ 117          static void WriteInstrReg (unsigned char Instr) {
+C51 COMPILER V8.05a   7135                                                                 11/12/2012 15:20:50 PAGE 3   
+
+ 118   1              while(ReadInstrReg() & 0x80);
+ 119   1              P20_PIN = 0;                            // select instruction register
+ 120   1              P21_PIN = 0;                            // write operation
+ 121   1              P22_PIN = 1;                            // give operation start signal
+ 122   1              _nop_ (); _nop_ ();             // wait
+ 123   1              LCD_DATA = Instr;                       // write instruction
+ 124   1              P22_PIN = 0;
+ 125   1              LCD_DATA = 0xff;                        // DATA_PORT is input [prevent I/O-Port from damage]
+ 126   1      }
+ 127          
+ 128          /*
+ 129          * ReadDataReg: Read from Data Register of LCD Display Device
+ 130          Application Note
+ 131          Interface and Simulation of a LCD Text Display APNT_161
+ 132          Page 3 of 6 Revision date: 26-Jun-01
+ 133          */
+ 134          
+ 135          static unsigned char ReadDataReg (void) {
+ 136   1              unsigned char val;
+ 137   1              while(ReadInstrReg() & 0x80);
+ 138   1              LCD_DATA = 0xff;                                // DATA_PORT is input
+ 139   1              P20_PIN = 1;                                    // select data register
+ 140   1              P21_PIN = 1;                                    // read-operation
+ 141   1              P22_PIN = 1;                                    // give operation start signal
+ 142   1              _nop_ (); _nop_ ();                     // wait
+ 143   1              val = LCD_DATA;                                 // read Instruction
+ 144   1              P22_PIN = 0;
+ 145   1              return (val);
+ 146   1      }
+ 147          
+ 148          /*
+ 149          * WriteDataReg: Write to Data Register of LCD Display Device
+ 150          */
+ 151          
+ 152          static void WriteDataReg (unsigned char val) {
+ 153   1              while(ReadInstrReg() & 0x80);
+ 154   1              P20_PIN = 1;                                    // select data register
+ 155   1              P21_PIN = 0;                                    // write operation
+ 156   1              P22_PIN = 1;                                    // give operation start signal
+ 157   1              _nop_ (); _nop_ ();                     // wait
+ 158   1              LCD_DATA = val;                                 // write value
+ 159   1              P22_PIN = 0;
+ 160   1              LCD_DATA = 0xff;                                // DATA_PORT is input [prevent I/O-Port from demage]
+ 161   1      }
+ 162          
+ 163          char putchar (char c) {
+ 164   1              unsigned char line;
+ 165   1              if (c == '\n') {
+ 166   2                      line = ReadInstrReg ();
+ 167   2                      if (line & LINE2_ADDR) {                                                // is already in line 2
+ 168   3                              WriteInstrReg (LINE1_ADDR | DD_RAM_PTR);        // place to start of line 1
+ 169   3                      }
+ 170   2                      else {
+ 171   3                              WriteInstrReg (LINE2_ADDR | DD_RAM_PTR);        // place to start of line 2
+ 172   3                      }
+ 173   2              }
+ 174   1              else {
+ 175   2                      WriteDataReg (c);
+ 176   2              }
+ 177   1              return (c);
+ 178   1      }
+ 179          
+C51 COMPILER V8.05a   7135                                                                 11/12/2012 15:20:50 PAGE 4   
+
+ 180          /*
+ 181          * Waits for some time so the 7066 can do the last command
+ 182          */
+ 183          
+ 184          void wait (unsigned int time) {
+ 185   1              while(time--);
+ 186   1      }
+ 187          
+ 188          /*
+ 189          * Clear_Display: Write 0x20 to Display RAM
+ 190          */
+ 191          static void Clear_Display (void) {
+ 192   1              WriteInstrReg (CLEAR_DISPLAY);
+ 193   1              wait (1);
+ 194   1      }
+ 195          #endif
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    270    ----
+   CONSTANT SIZE    =     32    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      2    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
